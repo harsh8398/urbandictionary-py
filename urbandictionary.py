@@ -1,5 +1,7 @@
 import sys
 import json
+import re
+
 if sys.version < '3':
     from urllib2 import urlopen
     from urllib import quote as urlquote
@@ -11,6 +13,9 @@ UD_DEFID_URL = 'https://api.urbandictionary.com/v0/define?defid='
 UD_DEFINE_URL = 'https://api.urbandictionary.com/v0/define?term='
 UD_RANDOM_URL = 'https://api.urbandictionary.com/v0/random'
 
+UD_DEFINE_NONAPI = 'https://www.urbandictionary.com/define.php?term='
+
+
 class UrbanDefinition(object):
     def __init__(self, word, definition, example, upvotes, downvotes):
         self.word = word
@@ -21,12 +26,13 @@ class UrbanDefinition(object):
 
     def __str__(self):
         return '%s: %s%s (%d, %d)' % (
-                self.word,
-                self.definition[:50],
-                '...' if len(self.definition) > 50 else '',
-                self.upvotes,
-                self.downvotes
-            )
+            self.word,
+            self.definition[:50],
+            '...' if len(self.definition) > 50 else '',
+            self.upvotes,
+            self.downvotes
+        )
+
 
 def _get_urban_json(url):
     f = urlopen(url)
@@ -34,42 +40,54 @@ def _get_urban_json(url):
     f.close()
     return data
 
-def _parse_urban_json(json, check_result=True):
+
+def _parse_urban_json(json, check_result=True, embedd_link=False):
     result = []
     if json is None or any(e in json for e in ('error', 'errors')):
         raise ValueException('UD: Invalid input for Urban Dictionary API')
     if check_result and ('list' not in json or len(json['list']) == 0):
         return result
     for definition in json['list']:
+        if embedd_link:
+            linkables = re.findall(r"\[(.*?)\]", definition['definition'])
+            for i in linkables:
+                old_str = '[' + i + ']'
+                new_str = "<a href=\"" + UD_DEFINE_NONAPI + urlquote(i) + "\">" + i + "</a>"
+                definition['definition'] = definition['definition'].replace(
+                    old_str, new_str)
+
         d = UrbanDefinition(
-                definition['word'], 
-                definition['definition'],
-                definition['example'],
-                int(definition['thumbs_up']),
-                int(definition['thumbs_down'])
-            )
+            definition['word'],
+            definition['definition'],
+            definition['example'],
+            int(definition['thumbs_up']),
+            int(definition['thumbs_down'])
+        )
         result.append(d)
     return result
 
-def define(term):
+
+def define(term, embedd_link=False):
     """Search for term/phrase and return list of UrbanDefinition objects.
 
     Keyword arguments:
     term -- term or phrase to search for (str)
     """
     json = _get_urban_json(UD_DEFINE_URL + urlquote(term))
-    return _parse_urban_json(json)
+    return _parse_urban_json(json, embedd_link=embedd_link)
 
-def defineID(defid):
+
+def defineID(defid, embedd_link=False):
     """Search for UD's definition ID and return list of UrbanDefinition objects.
 
     Keyword arguments:
     defid -- definition ID to search for (int or str)
     """
     json = _get_urban_json(UD_DEFID_URL + urlquote(str(defid)))
-    return _parse_urban_json(json)
+    return _parse_urban_json(json, embedd_link=embedd_link)
 
-def random():
+
+def random(embedd_link=False):
     """Return random definitions as a list of UrbanDefinition objects."""
     json = _get_urban_json(UD_RANDOM_URL)
-    return _parse_urban_json(json, check_result=False)
+    return _parse_urban_json(json, check_result=False, embedd_link=embedd_link)
